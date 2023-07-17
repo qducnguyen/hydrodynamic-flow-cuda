@@ -17,8 +17,8 @@
 #define nu 0.1
 #define dt 0.001
 
-#define GridSizeX 1
-#define GridSizeY 1
+#define GridSizeX 2
+#define GridSizeY 2
 #define BlockSizeX nx / GridSizeX
 #define BlockSizeY ny / GridSizeY
 
@@ -96,10 +96,9 @@ void init(double *u, double *v, double *p, double *b){
 
 __global__ void build_up_b(double *b, double *u, double *v, double dx, double dy){
 
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
 
-    // printf("%d", i);
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
         *(b + i * nx + j) = rho * (1 / dt *
@@ -111,58 +110,79 @@ __global__ void build_up_b(double *b, double *u, double *v, double dx, double dy
 			(*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) * (*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) / (2*2*dy*dy));
     }
 
+
+}
+
+__global__ void  solve_pressure_poisson(double *p, double *pn, double *b, double dx, double dy){
+
+	__shared__ double tile[BlockSizeY+2][BlockSizeX+2];
+
+	int ty = threadIdx.y;
+    int tx = threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;	
+
+
+   	if (i < ny && j < nx) {
+    	tile[ty+1][tx+1] = *(pn +i*nx+j);
+    }
+    if (ty == 0 && i > 0) {
+        tile[ty][tx+1] = *(pn+(i-1)*nx+j); 
+    }
+    if (ty == BlockSizeY-1 && i < ny-1) {
+        tile[ty+2][tx+1] = *(pn + (i+1)*nx +j);
+    }
+    if (tx == 0 && j > 0) {
+        tile[ty+1][tx] = *(pn + i*nx+j-1);
+    }
+    if (tx == BlockSizeX-1 && j < nx-1) {
+        tile[ty+1][tx+2] = *(pn + i*nx+j+1);
+    }
+
     __syncthreads();
 
-}
+
+    if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
+        double tmp = ((tile[ty+1][tx+2] +tile[ty+1][tx]) * dy*dy  + 
+                        (tile[ty+2][tx+1] + tile[ty][tx+1]) * dx*dx)/
+                        (2 * (dx*dx + dy*dy))- 
+                        dx*dx*dy*dy / (2 * (dx*dx + dy*dy)) * *(b + i*nx +j);
+
+        tile[ty+1][tx+1] = tmp;
+    }
+	__syncthreads();
 
 
-__global__ void pressure_poisson(double *p, double *b, double dx, double dy){
+	if (j == nx-1){
+        tile[ty+1][tx+1] = tile[ty+1][tx];
+    }
 
-    int it;
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-   	__shared__ double testarray[BlockSizeX][BlockSizeY];
+    if (i == 0){
+    	tile[ty+1][tx+1] = tile[ty+2][tx+1];	
+    }
 
-    for (it = 0; it < nit; it++){
+    if (j == 0){
+        tile[ty+1][tx+1] = tile[ty+1][tx+2];
+    }
 
+    if (i == ny - 1){
+        tile[ty+1][tx+1] = 0;
+    }
 
-        if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
-            testarray[i][j] = ((*(p + i*nx + j + 1) + *(p + i * nx + j -1)) * dy*dy  + 
-                            (*(p + (i+1)*nx + j) + *(p + (i-1)*nx + j)) * dx*dx) /
-                            (2 * (dx*dx + dy*dy))- 
-                            dx*dx*dy*dy / (2 * (dx*dx + dy*dy)) * *(b + i*nx +j);
-        }
+	__syncthreads();
 
-        if (j == nx - 1){
-            testarray[i][j]= *(p + i*nx +j -1);
-        }
-
-        if (i == 0){
-            testarray[i][j] = *(p + nx + j);
-        }
-
-        if (j == 0){
-            testarray[i][j] = *(p + i*nx + 1);
-        }
-
-        if (i == ny - 1){
-            testarray[i][j] = 0;
-        }
-
-        __syncthreads();
-
-        *(p + i*nx + j) = testarray[i][j];
-
-        __syncthreads();
-
-
+	if (i < ny && j < nx) {
+		*(p + i*nx + j) = tile[ty+1][tx+1];
 	}
+
+	
 }
+
 
 __global__ void velocity_update(double *u, double *v, double *p, double dx, double dy){
 
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
 
     // printf("%d ", i);
 
@@ -234,8 +254,6 @@ __global__ void velocity_update(double *u, double *v, double *p, double dx, doub
 
     }
 
-	__syncthreads();
-
 
 }
 
@@ -244,8 +262,9 @@ int main(){
 
 	char* result_file_name = (char *)"flow_results_cuda.txt";
 
-	int n;
-	double *ucpu, *vcpu, *pcpu, *bcpu;
+	int n, it;
+
+	double *ucpu, *vcpu, *pcpu, *bcpu, *pncpu;
 	double dx = xmax / (nx-1);
 	double dy = ymax / (ny-1);
 
@@ -256,25 +275,27 @@ int main(){
 	ucpu = (double *) malloc((nx * ny) * sizeof(double));
 	vcpu = (double *) malloc((nx * ny) * sizeof(double));
 	pcpu = (double *) malloc((nx * ny) * sizeof(double));
+	pncpu = (double *) malloc((nx * ny) * sizeof(double));
 	bcpu = (double *) malloc((nx * ny) * sizeof(double));
 
-	init(ucpu, vcpu, pcpu ,bcpu);
-
+	init(ucpu, vcpu, pcpu, bcpu);
 
 	gettimeofday(&time_start, NULL);	
 
 
-
-  	double *ugpu, *vgpu, *pgpu, *bgpu;
+  	double *ugpu, *vgpu, *pgpu, *bgpu, *pngpu, *tempgpu;
     
     cudaMalloc((void **)&ugpu, (nx * ny) * sizeof(double));
     cudaMalloc((void **)&vgpu, (nx * ny) * sizeof(double));
     cudaMalloc((void **)&pgpu, (nx * ny) * sizeof(double));
+    cudaMalloc((void **)&pngpu, (nx * ny) * sizeof(double));
+    cudaMalloc((void **)&tempgpu, (nx * ny) * sizeof(double));
     cudaMalloc((void **)&bgpu, (nx * ny) * sizeof(double));
 
     cudaMemcpy(ugpu,ucpu, (nx * ny) * sizeof(double),cudaMemcpyHostToDevice); 
     cudaMemcpy(vgpu,vcpu, (nx * ny) * sizeof(double),cudaMemcpyHostToDevice); 
     cudaMemcpy(pgpu,pcpu, (nx * ny) * sizeof(double),cudaMemcpyHostToDevice); 
+    cudaMemcpy(pngpu,pncpu, (nx * ny) * sizeof(double),cudaMemcpyHostToDevice); 
     cudaMemcpy(bgpu,bcpu, (nx * ny) * sizeof(double),cudaMemcpyHostToDevice); 
 
     dim3 dimGrid(GridSizeX, GridSizeY);
@@ -283,9 +304,17 @@ int main(){
 
     for(n =0; n < nt; n++){
         build_up_b<<<dimGrid, dimBlock>>>(bgpu, ugpu, vgpu, dx, dy);
-        pressure_poisson<<<dimGrid, dimBlock>>>(pgpu, bgpu, dx, dy);
-        velocity_update<<<dimGrid, dimBlock>>>(ugpu, vgpu, pgpu, dx, dy);
-    }
+
+	    for (it = 0; it < nit; it++){
+	    	tempgpu = pngpu;
+	        pngpu = pgpu;
+	        pgpu = tempgpu;
+	        solve_pressure_poisson<<<dimGrid, dimBlock>>>(pgpu, pngpu, bgpu, dx, dy);
+
+ 	  	 }
+
+       velocity_update<<<dimGrid, dimBlock>>>(ugpu, vgpu, pgpu, dx, dy);
+	}
 
     cudaMemcpy(ucpu,ugpu, (nx * ny) * sizeof(double),cudaMemcpyDeviceToHost); 
     cudaMemcpy(vcpu,vgpu, (nx * ny) * sizeof(double),cudaMemcpyDeviceToHost); 
