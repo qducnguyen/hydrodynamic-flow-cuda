@@ -15,6 +15,10 @@
 #define nu 0.1
 #define dt 0.001
 #define result_file_name "flow_results.txt"
+#define display_num 10
+
+const int display_step = nt / display_num;
+
 
 void save_results(double *u, double *v, double *p, char *filename, double dx, double dy)
 {
@@ -230,6 +234,10 @@ void cavity_flow(double *u, double *v, double *p, double *b, double dx, double d
 
 		free(un);
 		free(vn);
+
+		if (n != 0 && ((n+1) % display_step) == 0){
+			fprintf(stdout, "Running: %d / %d ... \n", n+1, nt);
+		}
 	}
 }
 

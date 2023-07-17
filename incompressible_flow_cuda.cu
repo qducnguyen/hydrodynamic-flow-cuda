@@ -16,6 +16,9 @@
 #define nu 0.1
 #define dt 0.001
 #define result_file_name "flow_results_cuda.txt"
+#define display_num 10
+
+const int display_step = nt / display_num;
 
 
 #define GridSizeX 4
@@ -23,7 +26,7 @@
 #define BlockSizeX nx / GridSizeX
 #define BlockSizeY ny / GridSizeY
 
-void save_results(double *u, double *v, double *p, char *filename, double dx, double dy)
+void save_results(double *u, double *v, double *p, const char *filename, double dx, double dy)
 {
 	//
 	FILE *file = fopen(filename, "w");
@@ -357,6 +360,10 @@ int main()
 		}
 
 		velocity_update<<<dimGrid, dimBlock>>>(ugpu, vgpu, pgpu, dx, dy);
+
+		if (n != 0 && ((n+1) % display_step) == 0){
+			fprintf(stdout, "Running: %d / %d ... \n", n+1, nt);
+		}
 	}
 
 	cudaMemcpy(ucpu, ugpu, (nx * ny) * sizeof(double), cudaMemcpyDeviceToHost);
