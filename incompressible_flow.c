@@ -4,8 +4,8 @@
 #include <string.h>
 
 
-#define nx 51 
-#define ny 51
+#define nx 65 
+#define ny 65
 #define nt 10000
 #define nit 50 
 #define c 1.0
@@ -16,10 +16,25 @@
 #define dt 0.001
 
 
-void save_results(double *u, double *v, double *p, char *filename){
+void save_results(double *u, double *v, double *p, char *filename, double dx, double dy){
 	//  
 	FILE *file = fopen(filename, "w");
 	int i,j;
+
+	fprintf(file, "%d\n", nx);
+	fprintf(file, "%d\n", ny);
+	fprintf(file, "%d\n", nt);
+	fprintf(file, "%d\n", nit);
+	fprintf(file, "%f\n", c);
+	fprintf(file, "%f\n", xmax);
+	fprintf(file, "%f\n", ymax);
+	fprintf(file, "%f\n", rho);
+	fprintf(file, "%f\n", nu);
+	fprintf(file, "%f\n", dt);
+	fprintf(file, "%f\n", dx);
+	fprintf(file, "%f\n", dy);
+
+
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
 			// 73 pecision ..
@@ -28,8 +43,6 @@ void save_results(double *u, double *v, double *p, char *filename){
 		fprintf(file, "\n");
 	}
 
-	fprintf(file, "----------------\n");
-
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
 			// 73 pecision ..
@@ -37,7 +50,6 @@ void save_results(double *u, double *v, double *p, char *filename){
 		}
 		fprintf(file, "\n");
 	}
-	fprintf(file, "----------------\n");
 
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
@@ -46,8 +58,6 @@ void save_results(double *u, double *v, double *p, char *filename){
 		}
 		fprintf(file, "\n");
 	}
-	fprintf(file, "----------------\n");
-
 
 	fclose(file);
 }
@@ -98,16 +108,16 @@ void pressure_poisson(double *p, double *b, double dx, double dy){
 
 	for (it = 0; it < nit; it++){
 		// Mem copy
-		size_t size = nx * ny * sizeof(double);
-		double *pn = (double *) malloc(size);
-		memcpy(pn, p, size);
+		// size_t size = nx * ny * sizeof(double);
+		// double *pn = (double *) malloc(size);
+		// memcpy(pn, p, size);
 
 		// Calculate	
 
 		for (i = 1; i < ny - 1; i++){
 			for (j = 1; j < nx - 1; j++){
-				*(p + i*nx + j) = ((*(pn + i*nx + j + 1) + *(pn + i * nx + j -1)) * dy*dy  + 
-									(*(pn + (i+1)*nx + j) + *(pn + (i-1)*nx + j)) * dx*dx) /
+				*(p + i*nx + j) = ((*(p + i*nx + j + 1) + *(p + i * nx + j -1)) * dy*dy  + 
+									(*(p + (i+1)*nx + j) + *(p + (i-1)*nx + j)) * dx*dx) /
 									(2 * (dx*dx + dy*dy))- 
 									dx*dx*dy*dy / (2 * (dx*dx + dy*dy)) * *(b + i*nx +j);
 			}
@@ -133,9 +143,6 @@ void pressure_poisson(double *p, double *b, double dx, double dy){
 		for (j = 0; j < nx; j++){
 			*(p + (ny-1)*nx + j ) = 0;
 		}
-
-
-		free(pn);
 	}
 }
 
@@ -229,12 +236,13 @@ int main(){
 
 	cavity_flow(u, v, p, b, dx, dy);
 
-	save_results(u, v, p, result_file_name);
+	save_results(u, v, p, result_file_name, dx, dy);
 
 	free(u);
 	free(v);
 	free(p);
 	free(b);
+	free(result_file_name);
 
 	return 0;
 }
