@@ -80,13 +80,14 @@ void print_array(double *arr){
 }
 
 
-void init(double *u, double *v, double *p, double *b){
+void init(double *u, double *v, double *p, double *pn, double *b){
 	int i, j;
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
 			*(u + i * nx + j) = 0.0;
 			*(v + i * nx + j) = 0.0;
 			*(p + i * nx + j) = 0.0;
+			*(pn + i * nx + j) = 0.0;
 			*(b + i * nx + j) = 0.0;
 		}
 	}
@@ -96,18 +97,50 @@ void init(double *u, double *v, double *p, double *b){
 
 __global__ void build_up_b(double *b, double *u, double *v, double dx, double dy){
 
+	__shared__ double tile_u[BlockSizeY+2][BlockSizeX+2];
+	__shared__ double tile_v[BlockSizeY+2][BlockSizeX+2];
 
+	int ty = threadIdx.y;
+    int tx = threadIdx.x;
     int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;	
+
+
+    if (i < ny && j < nx) {
+    	tile_u[ty+1][tx+1] = *(u +i*nx+j);
+		tile_v[ty+1][tx+1] = *(v +i*nx+j);
+    }
+    if (ty == 0 && i > 0) {
+        tile_u[ty][tx+1] = *(u+(i-1)*nx+j); 
+        tile_v[ty][tx+1] = *(v+(i-1)*nx+j); 
+
+    }
+    if (ty == BlockSizeY-1 && i < ny-1) {
+        tile_u[ty+2][tx+1] = *(u + (i+1)*nx +j);
+        tile_v[ty+2][tx+1] = *(v + (i+1)*nx +j);
+
+    }
+    if (tx == 0 && j > 0) {
+        tile_u[ty+1][tx] = *(u + i*nx+j-1);
+        tile_v[ty+1][tx] = *(v + i*nx+j-1);
+
+    }
+    if (tx == BlockSizeX-1 && j < nx-1) {
+        tile_u[ty+1][tx+2] = *(u + i*nx+j+1);
+        tile_v[ty+1][tx+2] = *(v + i*nx+j+1);
+
+    }
+
+    __syncthreads();
 
     if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
         *(b + i * nx + j) = rho * (1 / dt *
-				((*(u + i * nx + j + 1) - *(u + i * nx + j - 1)) / (2*dx)
-				+(*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) / (2*dy)) -
-			(*(u + i * nx + j + 1) - *(u + i*nx + j-1)) * (*(u + i * nx + j + 1) - *(u + i*nx + j-1)) / (2*2*dx*dx) -
-			2 * ((*(u + (i+1)*nx + j) - *(u + (i-1)*nx +j)) / (2*dy) *
-			(*(v + i * nx + j + 1) - *(v + i * nx + j - 1)) / (2*dx)) - 
-			(*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) * (*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) / (2*2*dy*dy));
+				((tile_u[ty+1][tx+2] - tile_u[ty+1][tx]) / (2*dx)
+				+(tile_v[ty+2][tx+1] - tile_v[ty][tx+1]) / (2*dy)) -
+			(tile_u[ty+1][tx+2] - tile_u[ty+1][tx]) * (tile_u[ty+1][tx+2]- tile_u[ty+1][tx]) / (2*2*dx*dx) -
+			2 * ((tile_u[ty+2][tx+1] - tile_u[ty][tx+1]) / (2*dy) *
+			(tile_v[ty+1][tx+2] - tile_v[ty+1][tx]) / (2*dx)) - 
+			(tile_v[ty+2][tx+1] - tile_v[ty][tx+1]) * (tile_v[ty+2][tx+1] - tile_v[ty][tx+1]) / (2*2*dy*dy));
     }
 
 
@@ -150,7 +183,7 @@ __global__ void  solve_pressure_poisson(double *p, double *pn, double *b, double
 
         tile[ty+1][tx+1] = tmp;
     }
-	__syncthreads();
+	// __syncthreads();
 
 
 	if (j == nx-1){
@@ -181,78 +214,101 @@ __global__ void  solve_pressure_poisson(double *p, double *pn, double *b, double
 
 __global__ void velocity_update(double *u, double *v, double *p, double dx, double dy){
 
+	__shared__ double tile_u[BlockSizeY+2][BlockSizeX+2];
+	__shared__ double tile_v[BlockSizeY+2][BlockSizeX+2];
+
+	int ty = threadIdx.y;
+    int tx = threadIdx.x;
     int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;	
 
-    // printf("%d ", i);
 
-    // if ( i == ny - 1){
-    // 	printf("hello");
-    // }
+    if (i < ny && j < nx) {
+    	tile_u[ty+1][tx+1] = *(u +i*nx+j);
+		tile_v[ty+1][tx+1] = *(v +i*nx+j);
+    }
+    if (ty == 0 && i > 0) {
+        tile_u[ty][tx+1] = *(u+(i-1)*nx+j); 
+        tile_v[ty][tx+1] = *(v+(i-1)*nx+j); 
 
-    double uij, uijp1, uip1j, uijm1, uim1j, vij, vijp1, vip1j, vijm1, vim1j;
+    }
+    if (ty == BlockSizeY-1 && i < ny-1) {
+        tile_u[ty+2][tx+1] = *(u + (i+1)*nx +j);
+        tile_v[ty+2][tx+1] = *(v + (i+1)*nx +j);
+
+    }
+    if (tx == 0 && j > 0) {
+        tile_u[ty+1][tx] = *(u + i*nx+j-1);
+        tile_v[ty+1][tx] = *(v + i*nx+j-1);
+
+    }
+    if (tx == BlockSizeX-1 && j < nx-1) {
+        tile_u[ty+1][tx+2] = *(u + i*nx+j+1);
+        tile_v[ty+1][tx+2] = *(v + i*nx+j+1);
+
+    }
+
+    __syncthreads();
+
 
     if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
 
-
-        uij   = *(u + i*nx + j);
-        uijp1 = *(u + i*nx + j + 1);
-        uip1j = *(u + (i+1)*nx + j);
-        uijm1 = *(u + i*nx + j - 1);
-        uim1j = *(u + (i-1)*nx + j);
-
-        vij   = *(v + i*nx + j);
-        vijp1 = *(v + i*nx + j + 1);
-        vip1j = *(v + (i+1)*nx + j);
-        vijm1 = *(v + i*nx + j - 1);
-        vim1j = *(v + (i-1)*nx + j);
-
-
-        *(u + i*nx + j) = uij - uij * dt / dx  * 
-								(uij - uijm1) -
-								vij * dt / dy *
-								(uij - uim1j) - 
+        double temp_u = tile_u[ty+1][tx+1] - tile_u[ty+1][tx+1] * dt / dx  * 
+								(tile_u[ty+1][tx+1] - tile_u[ty+1][tx]) -
+								tile_v[ty+1][tx+1] * dt / dy *
+								(tile_u[ty+1][tx+1] - tile_u[ty][tx+1]) - 
 								dt / (2 * rho * dx) * (*(p + i*nx + j+1) - *(p + i*nx +j-1)) +
 								nu * (dt / (dx*dx) *
-								(uijp1 - 2 * uij + uijm1) +
+								(tile_u[ty+1][tx+2] - 2 * tile_u[ty+1][tx+1] + tile_u[ty+1][tx]) +
 								dt / (dy*dy) *
-								(uip1j - 2 * uij + uim1j));
+								(tile_u[ty+2][tx+1] - 2 * tile_u[ty+1][tx+1] + tile_u[ty][tx+1]));
 
-        *(v + i*nx + j) = vij - uij * dt / dx  * 
-                                (vij - vijm1) -
-                           		vij * dt / dy *
-                            	(vij -vim1j) - 
+        double temp_v = tile_v[ty+1][tx+1] - tile_u[ty+1][tx+1] * dt / dx  * 
+                                (tile_v[ty+1][tx+1] - tile_v[ty+1][tx]) -
+                           		tile_v[ty+1][tx+1] * dt / dy *
+                            	(tile_v[ty+1][tx+1] -tile_v[ty][tx+1]) - 
                             	dt / (2 * rho * dy) * (*(p + (i+1)*nx + j) - *(p + (i-1)*nx +j)) +
                             	nu * (dt / (dx*dx) *
-                            	(vijp1 - 2 * vij + vijm1) +
+                            	(tile_v[ty+1][tx+2] - 2 * tile_v[ty+1][tx+1] + tile_v[ty+1][tx]) +
                             	dt/ (dy*dy) *
-                            	(vip1j - 2 * vij + vim1j));
+                            	(tile_v[ty+2][tx+1] - 2 * tile_v[ty+1][tx+1] + tile_v[ty][tx+1]));
 
-
+		tile_u[ty+1][tx+1] = temp_u;
+		tile_v[ty+1][tx+1] = temp_v;
     }
+    __syncthreads();
+
 
     if (j == 0){
-
-        *(u + i *nx) = 0;
-   		*(v + i *nx) = 0;
+       tile_u[ty+1][tx+1]= 0;
+   	   tile_v[ty+1][tx+1] = 0;
     }
     
     if (j == nx - 1){
- 		*(u + i * nx + nx - 1) = 0;
- 		*(v + i * nx + nx - 1) = 0;
+ 		tile_u[ty+1][tx+1]= 0;
+ 		tile_v[ty+1][tx+1] = 0;
       
     }
 
     if (i == 0){
-        *(u + j) = 0;
- 		*(v + j) = 0;
+        tile_u[ty+1][tx+1] = 0;
+ 		tile_v[ty+1][tx+1] = 0;
     }
 
     if (i == ny - 1){
-     	*(u + (ny-1)*nx + j) = 1; 	// set velocity on cavity lid equal to 1	
-		*(v + (ny-1)*nx + j) = 0; 
+     	tile_u[ty+1][tx+1] = 1; 	// set velocity on cavity lid equal to 1	
+		tile_v[ty+1][tx+1] = 0; 
 
     }
+
+
+    __syncthreads();
+
+	if (i < ny && j < nx) {
+		*(u + i*nx + j) = tile_u[ty+1][tx+1];
+		*(v + i*nx + j) = tile_v[ty+1][tx+1];
+	}
+
 
 
 }
@@ -278,7 +334,7 @@ int main(){
 	pncpu = (double *) malloc((nx * ny) * sizeof(double));
 	bcpu = (double *) malloc((nx * ny) * sizeof(double));
 
-	init(ucpu, vcpu, pcpu, bcpu);
+	init(ucpu, vcpu, pcpu, pncpu, bcpu);
 
 	gettimeofday(&time_start, NULL);	
 
