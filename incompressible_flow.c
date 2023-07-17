@@ -36,21 +36,21 @@ void save_results(double *u, double *v, double *p, char *filename, double dx, do
 	fprintf(file, "%f\n", dy);
 
 
-	// for (i = 0; i < ny; i++){
-	// 	for (j = 0; j < nx; j++){
-	// 		// 73 pecision ..
-	// 		fprintf(file, "%.73lf ", *(u + i*nx + j));
-	// 	}
-	// 	fprintf(file, "\n");
-	// }
+	for (i = 0; i < ny; i++){
+		for (j = 0; j < nx; j++){
+			// 73 pecision ..
+			fprintf(file, "%.73lf ", *(u + i*nx + j));
+		}
+		fprintf(file, "\n");
+	}
 
-	// for (i = 0; i < ny; i++){
-	// 	for (j = 0; j < nx; j++){
-	// 		// 73 pecision ..
-	// 		fprintf(file, "%.73lf ", *(v + i*nx + j));
-	// 	}
-	// 	fprintf(file, "\n");
-	// }
+	for (i = 0; i < ny; i++){
+		for (j = 0; j < nx; j++){
+			// 73 pecision ..
+			fprintf(file, "%.73lf ", *(v + i*nx + j));
+		}
+		fprintf(file, "\n");
+	}
 
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
@@ -79,10 +79,10 @@ void init(double *u, double *v, double *p, double *b){
 	int i, j;
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
-			*(u + i * nx + j) = 0.0;
-			*(v + i * nx + j) = 0.0;
-			*(p + i * nx + j) = 0.0;
-			*(b + i * nx + j) = 0.0;
+			*(u + i * nx + j) = 0;
+			*(v + i * nx + j) = 0;
+			*(p + i * nx + j) = 0;
+			*(b + i * nx + j) = 0;
 		}
 	}
 }

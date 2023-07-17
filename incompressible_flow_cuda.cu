@@ -17,8 +17,8 @@
 #define nu 0.1
 #define dt 0.001
 
-#define GridSizeX 2
-#define GridSizeY 2
+#define GridSizeX 4
+#define GridSizeY 4
 #define BlockSizeX nx / GridSizeX
 #define BlockSizeY ny / GridSizeY
 
@@ -41,21 +41,21 @@ void save_results(double *u, double *v, double *p, char *filename, double dx, do
 	fprintf(file, "%f\n", dy);
 
 
-	// for (i = 0; i < ny; i++){
-	// 	for (j = 0; j < nx; j++){
-	// 		// 73 pecision ..
-	// 		fprintf(file, "%.73lf ", *(u + i*nx + j));
-	// 	}
-	// 	fprintf(file, "\n");
-	// }
+	for (i = 0; i < ny; i++){
+		for (j = 0; j < nx; j++){
+			// 73 pecision ..
+			fprintf(file, "%.73lf ", *(u + i*nx + j));
+		}
+		fprintf(file, "\n");
+	}
 
-	// for (i = 0; i < ny; i++){
-	// 	for (j = 0; j < nx; j++){
-	// 		// 73 pecision ..
-	// 		fprintf(file, "%.73lf ", *(v + i*nx + j));
-	// 	}
-	// 	fprintf(file, "\n");
-	// }
+	for (i = 0; i < ny; i++){
+		for (j = 0; j < nx; j++){
+			// 73 pecision ..
+			fprintf(file, "%.73lf ", *(v + i*nx + j));
+		}
+		fprintf(file, "\n");
+	}
 
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
@@ -84,11 +84,11 @@ void init(double *u, double *v, double *p, double *pn, double *b){
 	int i, j;
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
-			*(u + i * nx + j) = 0.0;
-			*(v + i * nx + j) = 0.0;
-			*(p + i * nx + j) = 0.0;
-			*(pn + i * nx + j) = 0.0;
-			*(b + i * nx + j) = 0.0;
+			*(u + i * nx + j) = 0;
+			*(v + i * nx + j) = 0;
+			*(p + i * nx + j) = 0;
+			*(pn + i * nx + j) = 0;
+			*(b + i * nx + j) = 0;
 		}
 	}
 }
@@ -176,38 +176,28 @@ __global__ void  solve_pressure_poisson(double *p, double *pn, double *b, double
 
 
     if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
-        double tmp = ((tile[ty+1][tx+2] +tile[ty+1][tx]) * dy*dy  + 
+        *(p + i*nx + j) = ((tile[ty+1][tx+2] +tile[ty+1][tx]) * dy*dy  + 
                         (tile[ty+2][tx+1] + tile[ty][tx+1]) * dx*dx)/
                         (2 * (dx*dx + dy*dy))- 
                         dx*dx*dy*dy / (2 * (dx*dx + dy*dy)) * *(b + i*nx +j);
 
-        tile[ty+1][tx+1] = tmp;
     }
-	// __syncthreads();
-
 
 	if (j == nx-1){
-        tile[ty+1][tx+1] = tile[ty+1][tx];
+        *(p + i*nx + j) = *(p + i*nx + j - 1);
     }
 
     if (i == 0){
-    	tile[ty+1][tx+1] = tile[ty+2][tx+1];	
+    	*(p + i*nx + j) = *(p + (i+1)*nx + j);	
     }
 
     if (j == 0){
-        tile[ty+1][tx+1] = tile[ty+1][tx+2];
+        *(p + i*nx + j) = *(p + i*nx + j + 1);
     }
 
     if (i == ny - 1){
-        tile[ty+1][tx+1] = 0;
+        *(p + i*nx + j) = 0;
     }
-
-	__syncthreads();
-
-	if (i < ny && j < nx) {
-		*(p + i*nx + j) = tile[ty+1][tx+1];
-	}
-
 	
 }
 
@@ -253,7 +243,7 @@ __global__ void velocity_update(double *u, double *v, double *p, double dx, doub
 
     if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
 
-        double temp_u = tile_u[ty+1][tx+1] - tile_u[ty+1][tx+1] * dt / dx  * 
+        *(u + i*nx + j) = tile_u[ty+1][tx+1] - tile_u[ty+1][tx+1] * dt / dx  * 
 								(tile_u[ty+1][tx+1] - tile_u[ty+1][tx]) -
 								tile_v[ty+1][tx+1] * dt / dy *
 								(tile_u[ty+1][tx+1] - tile_u[ty][tx+1]) - 
@@ -263,7 +253,7 @@ __global__ void velocity_update(double *u, double *v, double *p, double dx, doub
 								dt / (dy*dy) *
 								(tile_u[ty+2][tx+1] - 2 * tile_u[ty+1][tx+1] + tile_u[ty][tx+1]));
 
-        double temp_v = tile_v[ty+1][tx+1] - tile_u[ty+1][tx+1] * dt / dx  * 
+       *(v + i*nx + j) = tile_v[ty+1][tx+1] - tile_u[ty+1][tx+1] * dt / dx  * 
                                 (tile_v[ty+1][tx+1] - tile_v[ty+1][tx]) -
                            		tile_v[ty+1][tx+1] * dt / dy *
                             	(tile_v[ty+1][tx+1] -tile_v[ty][tx+1]) - 
@@ -273,41 +263,31 @@ __global__ void velocity_update(double *u, double *v, double *p, double dx, doub
                             	dt/ (dy*dy) *
                             	(tile_v[ty+2][tx+1] - 2 * tile_v[ty+1][tx+1] + tile_v[ty][tx+1]));
 
-		tile_u[ty+1][tx+1] = temp_u;
-		tile_v[ty+1][tx+1] = temp_v;
     }
     __syncthreads();
 
 
     if (j == 0){
-       tile_u[ty+1][tx+1]= 0;
-   	   tile_v[ty+1][tx+1] = 0;
+       *(u + i*nx + j) = 0;
+   	   *(v + i*nx + j) = 0;
     }
     
     if (j == nx - 1){
- 		tile_u[ty+1][tx+1]= 0;
- 		tile_v[ty+1][tx+1] = 0;
+ 		*(u + i*nx + j)= 0;
+ 		*(v + i*nx + j) = 0;
       
     }
 
     if (i == 0){
-        tile_u[ty+1][tx+1] = 0;
- 		tile_v[ty+1][tx+1] = 0;
+        *(u + i*nx + j) = 0;
+ 		*(v + i*nx + j) = 0;
     }
 
     if (i == ny - 1){
-     	tile_u[ty+1][tx+1] = 1; 	// set velocity on cavity lid equal to 1	
-		tile_v[ty+1][tx+1] = 0; 
+     	*(u + i*nx + j) = 1; 	// set velocity on cavity lid equal to 1	
+		*(v + i*nx + j) = 0; 
 
     }
-
-
-    __syncthreads();
-
-	if (i < ny && j < nx) {
-		*(u + i*nx + j) = tile_u[ty+1][tx+1];
-		*(v + i*nx + j) = tile_v[ty+1][tx+1];
-	}
 
 
 
@@ -381,6 +361,8 @@ int main(){
     cudaFree(vgpu);
     cudaFree(pgpu);
     cudaFree(bgpu);
+    cudaFree(tempgpu);
+    cudaFree(pngpu);
 
 
    	gettimeofday(&time_end, NULL);
