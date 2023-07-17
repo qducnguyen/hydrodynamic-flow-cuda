@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <malloc.h>
-#include <math.h>
 #include <string.h>
 #include <cuda.h>
+#include <time.h>
+#include <sys/time.h>
 
-#define nx 65 
-#define ny 65
+
+#define nx 32
+#define ny 32
 #define nt 10000
 #define nit 50 
 #define c 1.0
@@ -15,10 +17,10 @@
 #define nu 0.1
 #define dt 0.001
 
-#define GridSizeX 16
-#define GridSizeY 16
-#define BlockSizeX (nx-1) / GridSizeX
-#define BlockSizeY (ny-1) / GridSizeY
+#define GridSizeX 1
+#define GridSizeY 1
+#define BlockSizeX nx / GridSizeX
+#define BlockSizeY ny / GridSizeY
 
 void save_results(double *u, double *v, double *p, char *filename, double dx, double dy){
 	//  
@@ -39,21 +41,21 @@ void save_results(double *u, double *v, double *p, char *filename, double dx, do
 	fprintf(file, "%f\n", dy);
 
 
-	for (i = 0; i < ny; i++){
-		for (j = 0; j < nx; j++){
-			// 73 pecision ..
-			fprintf(file, "%.73lf ", *(u + i*nx + j));
-		}
-		fprintf(file, "\n");
-	}
+	// for (i = 0; i < ny; i++){
+	// 	for (j = 0; j < nx; j++){
+	// 		// 73 pecision ..
+	// 		fprintf(file, "%.73lf ", *(u + i*nx + j));
+	// 	}
+	// 	fprintf(file, "\n");
+	// }
 
-	for (i = 0; i < ny; i++){
-		for (j = 0; j < nx; j++){
-			// 73 pecision ..
-			fprintf(file, "%.73lf ", *(v + i*nx + j));
-		}
-		fprintf(file, "\n");
-	}
+	// for (i = 0; i < ny; i++){
+	// 	for (j = 0; j < nx; j++){
+	// 		// 73 pecision ..
+	// 		fprintf(file, "%.73lf ", *(v + i*nx + j));
+	// 	}
+	// 	fprintf(file, "\n");
+	// }
 
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
@@ -97,15 +99,19 @@ __global__ void build_up_b(double *b, double *u, double *v, double dx, double dy
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
 
+    // printf("%d", i);
+
     if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
         *(b + i * nx + j) = rho * (1 / dt *
 				((*(u + i * nx + j + 1) - *(u + i * nx + j - 1)) / (2*dx)
 				+(*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) / (2*dy)) -
-			pow((*(u + i * nx + j + 1) - *(u + i*nx + j-1)) / (2*dx), 2) -
+			(*(u + i * nx + j + 1) - *(u + i*nx + j-1)) * (*(u + i * nx + j + 1) - *(u + i*nx + j-1)) / (2*2*dx*dx) -
 			2 * ((*(u + (i+1)*nx + j) - *(u + (i-1)*nx +j)) / (2*dy) *
 			(*(v + i * nx + j + 1) - *(v + i * nx + j - 1)) / (2*dx)) - 
-		pow((*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) / (2*dy), 2));
+			(*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) * (*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) / (2*2*dy*dy));
     }
+
+    __syncthreads();
 
 }
 
@@ -115,34 +121,42 @@ __global__ void pressure_poisson(double *p, double *b, double dx, double dy){
     int it;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
+   	__shared__ double testarray[BlockSizeX][BlockSizeY];
 
     for (it = 0; it < nit; it++){
 
+
         if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
-            *(p + i*nx + j) = ((*(p + i*nx + j + 1) + *(p + i * nx + j -1)) * dy*dy  + 
+            testarray[i][j] = ((*(p + i*nx + j + 1) + *(p + i * nx + j -1)) * dy*dy  + 
                             (*(p + (i+1)*nx + j) + *(p + (i-1)*nx + j)) * dx*dx) /
                             (2 * (dx*dx + dy*dy))- 
                             dx*dx*dy*dy / (2 * (dx*dx + dy*dy)) * *(b + i*nx +j);
         }
 
         if (j == nx - 1){
-            *(p + i*nx + j) = *(p + i*nx +j -1);
+            testarray[i][j]= *(p + i*nx +j -1);
         }
 
         if (i == 0){
-            *(p + j) = *(p + nx + j);
+            testarray[i][j] = *(p + nx + j);
         }
 
         if (j == 0){
-            *(p + i*nx) = *(p + i*nx + 1);
+            testarray[i][j] = *(p + i*nx + 1);
         }
 
         if (i == ny - 1){
-            *(p + i*nx + j) = 0;
+            testarray[i][j] = 0;
         }
 
         __syncthreads();
 
+        *(p + i*nx + j) = testarray[i][j];
+
+        __syncthreads();
+
+
+	}
 }
 
 __global__ void velocity_update(double *u, double *v, double *p, double dx, double dy){
@@ -150,47 +164,55 @@ __global__ void velocity_update(double *u, double *v, double *p, double dx, doub
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
 
+    // printf("%d ", i);
+
+    // if ( i == ny - 1){
+    // 	printf("hello");
+    // }
+
+    double uij, uijp1, uip1j, uijm1, uim1j, vij, vijp1, vip1j, vijm1, vim1j;
+
     if (i > 0 && i < ny - 1 && j > 0 && j < nx - 1){
 
-        double uij   = *(u + i*nx + j);
-        double uijp1 = *(u + i*nx + j + 1);
-        double uip1j = *(u + (i+1)*nx + j);
-        double uijm1 = *(u + i*nx + j - 1);
-        double uim1j = *(u + (i-1)*nx + j);
 
-        double vij   = *(v + i*nx + j);
-        double vijp1 = *(v + i*nx + j + 1);
-        double vip1j = *(v + (i+1)*nx + j);
-        double vijm1 = *(v + i*nx + j - 1);
-        double vim1j = *(v + (i-1)*nx + j);
+        uij   = *(u + i*nx + j);
+        uijp1 = *(u + i*nx + j + 1);
+        uip1j = *(u + (i+1)*nx + j);
+        uijm1 = *(u + i*nx + j - 1);
+        uim1j = *(u + (i-1)*nx + j);
+
+        vij   = *(v + i*nx + j);
+        vijp1 = *(v + i*nx + j + 1);
+        vip1j = *(v + (i+1)*nx + j);
+        vijm1 = *(v + i*nx + j - 1);
+        vim1j = *(v + (i-1)*nx + j);
 
 
-        *(u + i*nx + j) = uij - 
-								  uij * dt / dx  * 
-								  (uij - uijm1) -
-								  vij * dt / dy *
-								  (uij - uim1j) - 
-								  dt / (2 * rho * dx) * (*(p + i*nx + j+1) - *(p + i*nx +j-1)) +
-								  nu * (dt / (dx*dx) *
-								  	(uijp1 - 2 * uij + uijm1) +
-								  	dt/ (dy*dy) *
-								  	(uip1j - 2 * uij + uim1j));
+        *(u + i*nx + j) = uij - uij * dt / dx  * 
+								(uij - uijm1) -
+								vij * dt / dy *
+								(uij - uim1j) - 
+								dt / (2 * rho * dx) * (*(p + i*nx + j+1) - *(p + i*nx +j-1)) +
+								nu * (dt / (dx*dx) *
+								(uijp1 - 2 * uij + uijm1) +
+								dt / (dy*dy) *
+								(uip1j - 2 * uij + uim1j));
 
-        *(v + i*nx + j) = vij - 
-                           uij * dt / dx  * 
-                            (vij - vijm1) -
-                           vij * dt / dy *
-                            (vij -vim1j) - 
-                            dt / (2 * rho * dy) * (*(p + (i+1)*nx + j) - *(p + (i-1)*nx +j)) +
-                            nu * (dt / (dx*dx) *
-                            (vijp1 - 2 * vij + vijm1) +
-                            dt/ (dy*dy) *
-                            (vip1j - 2 * vij + vim1j));
+        *(v + i*nx + j) = vij - uij * dt / dx  * 
+                                (vij - vijm1) -
+                           		vij * dt / dy *
+                            	(vij -vim1j) - 
+                            	dt / (2 * rho * dy) * (*(p + (i+1)*nx + j) - *(p + (i-1)*nx +j)) +
+                            	nu * (dt / (dx*dx) *
+                            	(vijp1 - 2 * vij + vijm1) +
+                            	dt/ (dy*dy) *
+                            	(vip1j - 2 * vij + vim1j));
 
 
     }
 
     if (j == 0){
+
         *(u + i *nx) = 0;
    		*(v + i *nx) = 0;
     }
@@ -212,18 +234,24 @@ __global__ void velocity_update(double *u, double *v, double *p, double dx, doub
 
     }
 
-}
+	__syncthreads();
 
+
+}
 
 
 int main(){
 
-	char* result_file_name = "flow_results.txt";
+	char* result_file_name = (char *)"flow_results_cuda.txt";
 
 	int n;
 	double *ucpu, *vcpu, *pcpu, *bcpu;
 	double dx = xmax / (nx-1);
 	double dy = ymax / (ny-1);
+
+
+	struct timeval time_start;
+    struct timeval time_end;
 
 	ucpu = (double *) malloc((nx * ny) * sizeof(double));
 	vcpu = (double *) malloc((nx * ny) * sizeof(double));
@@ -231,6 +259,11 @@ int main(){
 	bcpu = (double *) malloc((nx * ny) * sizeof(double));
 
 	init(ucpu, vcpu, pcpu ,bcpu);
+
+
+	gettimeofday(&time_start, NULL);	
+
+
 
   	double *ugpu, *vgpu, *pgpu, *bgpu;
     
@@ -249,9 +282,9 @@ int main(){
 
 
     for(n =0; n < nt; n++){
-        build_up_b<<dimGrid, dimBlock>>(bgpu, ugpu, vgpu, dx, dy);
-        pressure_poisson<<dimGrid, dimBlock>>(pgpu, bgpu, dx, dy);
-        velocity_update<<dimGrid, dimBlock>>(ugpu, vgpu, dx, dy);
+        build_up_b<<<dimGrid, dimBlock>>>(bgpu, ugpu, vgpu, dx, dy);
+        pressure_poisson<<<dimGrid, dimBlock>>>(pgpu, bgpu, dx, dy);
+        velocity_update<<<dimGrid, dimBlock>>>(ugpu, vgpu, pgpu, dx, dy);
     }
 
     cudaMemcpy(ucpu,ugpu, (nx * ny) * sizeof(double),cudaMemcpyDeviceToHost); 
@@ -259,17 +292,27 @@ int main(){
     cudaMemcpy(pcpu,pgpu, (nx * ny) * sizeof(double),cudaMemcpyDeviceToHost); 
     cudaMemcpy(bcpu,bgpu, (nx * ny) * sizeof(double),cudaMemcpyDeviceToHost); 
 
+    cudaFree(ugpu);
+    cudaFree(vgpu);
+    cudaFree(pgpu);
+    cudaFree(bgpu);
+
+
+   	gettimeofday(&time_end, NULL);
+
 	save_results(ucpu, vcpu, pcpu, result_file_name, dx, dy);
 
 	free(ucpu);
 	free(vcpu);
 	free(pcpu);
 	free(bcpu);
-	free(result_file_name);
-    cudaFree(ugpu);
-    cudaFree(vgpu);
-    cudaFree(pgpu);
-    cudaFree(bgpu);
+
+
+	double exec_time = (double) (time_end.tv_sec - time_start.tv_sec) +
+                   (double) (time_end.tv_usec - time_start.tv_usec) / 1000000.0;
+
+    printf("Running time for CUDA code: %lf\n", exec_time);
+
 
 	return 0;
 }

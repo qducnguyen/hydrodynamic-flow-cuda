@@ -1,11 +1,12 @@
 #include <stdio.h>
 #include <malloc.h>
-#include <math.h>
 #include <string.h>
+#include <time.h>
+#include <sys/time.h>
 
 
-#define nx 65 
-#define ny 65
+#define nx 32 
+#define ny 32
 #define nt 10000
 #define nit 50 
 #define c 1.0
@@ -35,21 +36,21 @@ void save_results(double *u, double *v, double *p, char *filename, double dx, do
 	fprintf(file, "%f\n", dy);
 
 
-	for (i = 0; i < ny; i++){
-		for (j = 0; j < nx; j++){
-			// 73 pecision ..
-			fprintf(file, "%.73lf ", *(u + i*nx + j));
-		}
-		fprintf(file, "\n");
-	}
+	// for (i = 0; i < ny; i++){
+	// 	for (j = 0; j < nx; j++){
+	// 		// 73 pecision ..
+	// 		fprintf(file, "%.73lf ", *(u + i*nx + j));
+	// 	}
+	// 	fprintf(file, "\n");
+	// }
 
-	for (i = 0; i < ny; i++){
-		for (j = 0; j < nx; j++){
-			// 73 pecision ..
-			fprintf(file, "%.73lf ", *(v + i*nx + j));
-		}
-		fprintf(file, "\n");
-	}
+	// for (i = 0; i < ny; i++){
+	// 	for (j = 0; j < nx; j++){
+	// 		// 73 pecision ..
+	// 		fprintf(file, "%.73lf ", *(v + i*nx + j));
+	// 	}
+	// 	fprintf(file, "\n");
+	// }
 
 	for (i = 0; i < ny; i++){
 		for (j = 0; j < nx; j++){
@@ -94,10 +95,10 @@ void build_up_b(double *b, double *u, double *v, double dx, double dy){
 			*(b + i * nx + j) = rho * (1 / dt *
 				((*(u + i * nx + j + 1) - *(u + i * nx + j - 1)) / (2*dx)
 				+(*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) / (2*dy)) -
-			pow((*(u + i * nx + j + 1) - *(u + i*nx + j-1)) / (2*dx), 2) -
+			(*(u + i * nx + j + 1) - *(u + i*nx + j-1)) * (*(u + i * nx + j + 1) - *(u + i*nx + j-1)) / (2*2*dx*dx) -
 			2 * ((*(u + (i+1)*nx + j) - *(u + (i-1)*nx +j)) / (2*dy) *
 			(*(v + i * nx + j + 1) - *(v + i * nx + j - 1)) / (2*dx)) - 
-			pow((*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) / (2*dy), 2));
+			(*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) * (*(v + (i+1)*nx + j) - *(v + (i-1)*nx +j)) / (2*2*dy*dy));
 		}
 	}
 }
@@ -227,6 +228,10 @@ int main(){
 	double dx = xmax / (nx-1);
 	double dy = ymax / (ny-1);
 
+	struct timeval time_start;
+    struct timeval time_end;
+
+
 	u = (double *) malloc((nx * ny) * sizeof(double));
 	v = (double *) malloc((nx * ny) * sizeof(double));
 	p = (double *) malloc((nx * ny) * sizeof(double));
@@ -234,7 +239,14 @@ int main(){
 
 	init(u, v, p ,b);
 
+
+    gettimeofday(&time_start, NULL);	
+
 	cavity_flow(u, v, p, b, dx, dy);
+
+	gettimeofday(&time_end, NULL);
+
+
 
 	save_results(u, v, p, result_file_name, dx, dy);
 
@@ -242,7 +254,11 @@ int main(){
 	free(v);
 	free(p);
 	free(b);
-	free(result_file_name);
+
+    double exec_time = (double) (time_end.tv_sec - time_start.tv_sec) +
+                   (double) (time_end.tv_usec - time_start.tv_usec) / 1000000.0;
+
+    printf("Running time for serial code: %lf\n", exec_time);
 
 	return 0;
 }
