@@ -17,7 +17,7 @@
 #define result_file_name 	"flow_results.txt"
 #define display_num 		10
 #define is_log 				0
-#define log_file_name 		"flow_results.log"
+#define log_file_name 		"flow_logs.log"
 #define log_step 			50 
 
 
@@ -258,7 +258,7 @@ void save_log(double *u, double *v, double *p, FILE *file, double dx, double dy,
 		fprintf(file, "%f\n", dy);
 	}
 
-	fprintf(file, "Step %d\n", step);
+	fprintf(file, "%d\n", step);
 
 	for (i = 0; i < ny; i++)
 	{

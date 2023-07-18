@@ -18,7 +18,7 @@
 #define result_file_name 	"flow_results_cuda.txt"
 #define display_num 		10
 #define is_log 				0
-#define log_file_name 		"flow_results_cuda.log"
+#define log_file_name 		"flow_logs_cuda.log"
 #define log_step 			50 
 
 
@@ -33,7 +33,6 @@ const int display_step = nt / display_num;
 
 void save_log(double *u, double *v, double *p, FILE *file, double dx, double dy, int step);
 void save_results(double *u, double *v, double *p, const char *filename, double dx, double dy);
-
 
 
 void init(double *u, double *v, double *p, double *pn, double *b)
@@ -384,7 +383,7 @@ void save_log(double *u, double *v, double *p, FILE *file, double dx, double dy,
 		fprintf(file, "%f\n", dy);
 	}
 
-	fprintf(file, "Step %d\n", step);
+	fprintf(file, "%d\n", step);
 
 	for (i = 0; i < ny; i++)
 	{
