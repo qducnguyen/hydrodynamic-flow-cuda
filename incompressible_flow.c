@@ -4,87 +4,27 @@
 #include <time.h>
 #include <sys/time.h>
 
-#define nx 32
-#define ny 32
-#define nt 10000
-#define nit 50
-#define c 1.0
-#define xmax 2.0
-#define ymax 2.0
-#define rho 1.0
-#define nu 0.1
-#define dt 0.001
-#define result_file_name "flow_results.txt"
-#define display_num 10
+#define nx 					32
+#define ny 					32
+#define nt 					10000
+#define nit 				50
+#define c 					1.0
+#define xmax 				2.0
+#define ymax 				2.0
+#define rho 				1.0
+#define nu 					0.1
+#define dt 					0.001
+#define result_file_name 	"flow_results.txt"
+#define display_num 		10
+#define is_log 				0
+#define log_file_name 		"flow_results.log"
+#define log_step 			50 
+
 
 const int display_step = nt / display_num;
+void save_log(double *u, double *v, double *p, FILE *file, double dx, double dy, int step);
+void save_results(double *u, double *v, double *p, char *filename, double dx, double dy);
 
-
-void save_results(double *u, double *v, double *p, char *filename, double dx, double dy)
-{
-	//
-	FILE *file = fopen(filename, "w");
-	int i, j;
-
-	fprintf(file, "%d\n", nx);
-	fprintf(file, "%d\n", ny);
-	fprintf(file, "%d\n", nt);
-	fprintf(file, "%d\n", nit);
-	fprintf(file, "%f\n", c);
-	fprintf(file, "%f\n", xmax);
-	fprintf(file, "%f\n", ymax);
-	fprintf(file, "%f\n", rho);
-	fprintf(file, "%f\n", nu);
-	fprintf(file, "%f\n", dt);
-	fprintf(file, "%f\n", dx);
-	fprintf(file, "%f\n", dy);
-
-	for (i = 0; i < ny; i++)
-	{
-		for (j = 0; j < nx; j++)
-		{
-			// 73 pecision ..
-			fprintf(file, "%.73lf ", *(u + i * nx + j));
-		}
-		fprintf(file, "\n");
-	}
-
-	for (i = 0; i < ny; i++)
-	{
-		for (j = 0; j < nx; j++)
-		{
-			// 73 pecision ..
-			fprintf(file, "%.73lf ", *(v + i * nx + j));
-		}
-		fprintf(file, "\n");
-	}
-
-	for (i = 0; i < ny; i++)
-	{
-		for (j = 0; j < nx; j++)
-		{
-			// 73 pecision ..
-			fprintf(file, "%.73lf ", *(p + i * nx + j));
-		}
-		fprintf(file, "\n");
-	}
-
-	fclose(file);
-}
-
-void print_array(double *arr)
-{
-	printf("\n\n");
-	int i, j;
-	for (i = 0; i < ny; i++)
-	{
-		for (j = 0; j < nx; j++)
-		{
-			printf("%e ", *(arr + i * nx + j));
-		}
-		printf("\n\n");
-	}
-}
 
 void init(double *u, double *v, double *p, double *b)
 {
@@ -238,6 +178,26 @@ void cavity_flow(double *u, double *v, double *p, double *b, double dx, double d
 		if (n != 0 && ((n+1) % display_step) == 0){
 			fprintf(stdout, "Running: %d / %d ... \n", n+1, nt);
 		}
+
+		if (n == nt - 1 && (nt % display_step) != 0){
+			fprintf(stdout, "Running: %d / %d ... \n", n+1, nt);
+		}
+
+		if (is_log){
+			FILE *filelog;
+			if (n == 0){
+				filelog = fopen(log_file_name, "w");
+				save_log(u, v, p, filelog, dx, dy, 1);
+			}
+			else if ( (n+1) % log_step == 0)
+					save_log(u, v, p, filelog, dx, dy, n+1);
+			else if ( n == nt -1){
+				if ((n + 1) % log_step != 0){
+					save_log(u, v, p, filelog, dx, dy, n+1);
+				}
+				fclose(filelog);
+			}
+		}
 	}
 }
 
@@ -277,4 +237,111 @@ int main()
 	printf("Running time for serial code: %lf\n", exec_time);
 
 	return 0;
+}
+
+void save_log(double *u, double *v, double *p, FILE *file, double dx, double dy, int step){
+	int i, j;
+
+	if (step == 1){
+
+		fprintf(file, "%d\n", nx);
+		fprintf(file, "%d\n", ny);
+		fprintf(file, "%d\n", nt);
+		fprintf(file, "%d\n", nit);
+		fprintf(file, "%f\n", c);
+		fprintf(file, "%f\n", xmax);
+		fprintf(file, "%f\n", ymax);
+		fprintf(file, "%f\n", rho);
+		fprintf(file, "%f\n", nu);
+		fprintf(file, "%f\n", dt);
+		fprintf(file, "%f\n", dx);
+		fprintf(file, "%f\n", dy);
+	}
+
+	fprintf(file, "Step %d\n", step);
+
+	for (i = 0; i < ny; i++)
+	{
+		for (j = 0; j < nx; j++)
+		{
+			// 20 pecision ..
+			fprintf(file, "%.20lf ", *(u + i * nx + j));
+		}
+		fprintf(file, "\n");
+	}
+
+	for (i = 0; i < ny; i++)
+	{
+		for (j = 0; j < nx; j++)
+		{
+			// 20 pecision ..
+			fprintf(file, "%.20lf ", *(v + i * nx + j));
+		}
+		fprintf(file, "\n");
+	}
+
+	for (i = 0; i < ny; i++)
+	{
+		for (j = 0; j < nx; j++)
+		{
+			// 20 pecision ..
+			fprintf(file, "%.20lf ", *(p + i * nx + j));
+		}
+		fprintf(file, "\n");
+	}
+
+
+}
+
+
+void save_results(double *u, double *v, double *p, char *filename, double dx, double dy)
+{
+	//
+	FILE *file = fopen(filename, "w");
+	int i, j;
+
+	fprintf(file, "%d\n", nx);
+	fprintf(file, "%d\n", ny);
+	fprintf(file, "%d\n", nt);
+	fprintf(file, "%d\n", nit);
+	fprintf(file, "%f\n", c);
+	fprintf(file, "%f\n", xmax);
+	fprintf(file, "%f\n", ymax);
+	fprintf(file, "%f\n", rho);
+	fprintf(file, "%f\n", nu);
+	fprintf(file, "%f\n", dt);
+	fprintf(file, "%f\n", dx);
+	fprintf(file, "%f\n", dy);
+
+	for (i = 0; i < ny; i++)
+	{
+		for (j = 0; j < nx; j++)
+		{
+			// 73 pecision ..
+			fprintf(file, "%.73lf ", *(u + i * nx + j));
+		}
+		fprintf(file, "\n");
+	}
+
+	for (i = 0; i < ny; i++)
+	{
+		for (j = 0; j < nx; j++)
+		{
+			// 73 pecision ..
+			fprintf(file, "%.73lf ", *(v + i * nx + j));
+		}
+		fprintf(file, "\n");
+	}
+
+	for (i = 0; i < ny; i++)
+	{
+		for (j = 0; j < nx; j++)
+		{
+			// 73 pecision ..
+			fprintf(file, "%.73lf ", *(p + i * nx + j));
+		}
+		fprintf(file, "\n");
+	}
+
+	fclose(file);
 }
