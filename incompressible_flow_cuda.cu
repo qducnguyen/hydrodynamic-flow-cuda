@@ -37,7 +37,6 @@ void save_results(double *u, double *v, double *p, const char *filename, double 
 
 void init(double *u, double *v, double *p, double *pn, double *b)
 {
-	printf("%d", GridSizeX);
 	int i, j;
 	for (i = 0; i < ny; i++)
 	{
