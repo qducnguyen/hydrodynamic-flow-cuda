@@ -25,10 +25,10 @@
 const int display_step = nt / display_num;
 
 
-#define GridSizeX 4
-#define GridSizeY 4
-#define BlockSizeX nx / GridSizeX
-#define BlockSizeY ny / GridSizeY
+#define BlockSizeX 8 
+#define BlockSizeY 8
+#define GridSizeX nx / BlockSizeX
+#define GridSizeY ny / BlockSizeY
 
 
 void save_log(double *u, double *v, double *p, FILE *file, double dx, double dy, int step);
@@ -37,6 +37,7 @@ void save_results(double *u, double *v, double *p, const char *filename, double 
 
 void init(double *u, double *v, double *p, double *pn, double *b)
 {
+	printf("%d", GridSizeX);
 	int i, j;
 	for (i = 0; i < ny; i++)
 	{
@@ -163,7 +164,7 @@ __global__ void solve_pressure_poisson(double *p, double *pn, double *b, double 
 	}
 }
 
-__global__ void velocity_update(double *u, double *v, double *p, double dx, double dy)
+__global__ void velocity_update(double *u, double *v, double *un, double *vn, double *p, double dx, double dy)
 {
 
 	__shared__ double tile_u[BlockSizeY + 2][BlockSizeX + 2];
@@ -176,28 +177,28 @@ __global__ void velocity_update(double *u, double *v, double *p, double dx, doub
 
 	if (i < ny && j < nx)
 	{
-		tile_u[ty + 1][tx + 1] = *(u + i * nx + j);
-		tile_v[ty + 1][tx + 1] = *(v + i * nx + j);
+		tile_u[ty + 1][tx + 1] = *(un + i * nx + j);
+		tile_v[ty + 1][tx + 1] = *(vn + i * nx + j);
 	}
 	if (ty == 0 && i > 0)
 	{
-		tile_u[ty][tx + 1] = *(u + (i - 1) * nx + j);
-		tile_v[ty][tx + 1] = *(v + (i - 1) * nx + j);
+		tile_u[ty][tx + 1] = *(un + (i - 1) * nx + j);
+		tile_v[ty][tx + 1] = *(vn + (i - 1) * nx + j);
 	}
 	if (ty == BlockSizeY - 1 && i < ny - 1)
 	{
-		tile_u[ty + 2][tx + 1] = *(u + (i + 1) * nx + j);
-		tile_v[ty + 2][tx + 1] = *(v + (i + 1) * nx + j);
+		tile_u[ty + 2][tx + 1] = *(un + (i + 1) * nx + j);
+		tile_v[ty + 2][tx + 1] = *(vn + (i + 1) * nx + j);
 	}
 	if (tx == 0 && j > 0)
 	{
-		tile_u[ty + 1][tx] = *(u + i * nx + j - 1);
-		tile_v[ty + 1][tx] = *(v + i * nx + j - 1);
+		tile_u[ty + 1][tx] = *(un + i * nx + j - 1);
+		tile_v[ty + 1][tx] = *(vn + i * nx + j - 1);
 	}
 	if (tx == BlockSizeX - 1 && j < nx - 1)
 	{
-		tile_u[ty + 1][tx + 2] = *(u + i * nx + j + 1);
-		tile_v[ty + 1][tx + 2] = *(v + i * nx + j + 1);
+		tile_u[ty + 1][tx + 2] = *(un + i * nx + j + 1);
+		tile_v[ty + 1][tx + 2] = *(vn + i * nx + j + 1);
 	}
 
 	__syncthreads();
@@ -223,7 +224,7 @@ __global__ void velocity_update(double *u, double *v, double *p, double dx, doub
 								  dt / (dy * dy) *
 									  (tile_v[ty + 2][tx + 1] - 2 * tile_v[ty + 1][tx + 1] + tile_v[ty][tx + 1]));
 	}
-	__syncthreads();
+
 
 	if (j == 0)
 	{
@@ -272,17 +273,25 @@ int main()
 
 	gettimeofday(&time_start, NULL);
 
-	double *ugpu, *vgpu, *pgpu, *bgpu, *pngpu, *tempgpu;
+	double *ugpu, *vgpu, *ungpu, *vngpu, *pgpu, *bgpu, *pngpu, *tempgpu, *tempgpu2;
 
 	cudaMalloc((void **)&ugpu, (nx * ny) * sizeof(double));
 	cudaMalloc((void **)&vgpu, (nx * ny) * sizeof(double));
+	cudaMalloc((void **)&ungpu, (nx * ny) * sizeof(double));
+	cudaMalloc((void **)&vngpu, (nx * ny) * sizeof(double));
+
 	cudaMalloc((void **)&pgpu, (nx * ny) * sizeof(double));
 	cudaMalloc((void **)&pngpu, (nx * ny) * sizeof(double));
 	cudaMalloc((void **)&tempgpu, (nx * ny) * sizeof(double));
+	cudaMalloc((void **)&tempgpu2, (nx * ny) * sizeof(double));
+
 	cudaMalloc((void **)&bgpu, (nx * ny) * sizeof(double));
+
 
 	cudaMemcpy(ugpu, ucpu, (nx * ny) * sizeof(double), cudaMemcpyHostToDevice);
 	cudaMemcpy(vgpu, vcpu, (nx * ny) * sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(ungpu, ucpu, (nx * ny) * sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(vngpu, vcpu, (nx * ny) * sizeof(double), cudaMemcpyHostToDevice);
 	cudaMemcpy(pgpu, pcpu, (nx * ny) * sizeof(double), cudaMemcpyHostToDevice);
 	cudaMemcpy(pngpu, pncpu, (nx * ny) * sizeof(double), cudaMemcpyHostToDevice);
 	cudaMemcpy(bgpu, bcpu, (nx * ny) * sizeof(double), cudaMemcpyHostToDevice);
@@ -302,7 +311,15 @@ int main()
 			solve_pressure_poisson<<<dimGrid, dimBlock>>>(pgpu, pngpu, bgpu, dx, dy);
 		}
 
-		velocity_update<<<dimGrid, dimBlock>>>(ugpu, vgpu, pgpu, dx, dy);
+
+		tempgpu  = vngpu;
+		tempgpu2 = ungpu;
+		vngpu = vgpu;
+		ungpu = ugpu;
+		vgpu = tempgpu;
+		ugpu = tempgpu2;
+
+		velocity_update<<<dimGrid, dimBlock>>>(ugpu, vgpu, ungpu, vngpu, pgpu, dx, dy);
 
 		if (n != 0 && ((n+1) % display_step) == 0){
 			fprintf(stdout, "Running: %d / %d ... \n", n+1, nt);
@@ -344,7 +361,10 @@ int main()
 	cudaFree(pgpu);
 	cudaFree(bgpu);
 	cudaFree(tempgpu);
+	cudaFree(tempgpu2);
 	cudaFree(pngpu);
+	cudaFree(ungpu);
+	cudaFree(vngpu);
 
 	gettimeofday(&time_end, NULL);
 
