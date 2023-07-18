@@ -1,5 +1,35 @@
 # Hydrodynamic Flow Cuda
 We implemented Hydrodynamic Flow by serial code and CUDA parallel code by C Programming using Navier-Stokes Equations.
+
+## How to run code 
+
+You could change settings such as dx, dy, dt, GridSize, BlockSize in the file directly.
+
+* Serial code :
+
+```
+  gcc -o incompressible_flow incompressible_flow.c
+  ./incompressible_flow
+```
+
+* CUDA code:
+
+```
+  nvcc -o incompressible_flow_cuda incompressible_flow_cuda.cu
+  ./incompressible_flow_cuda
+```
+
+##
+
+
+### Google Colab Version
+
+```
+https://colab.research.google.com/drive/1ilI0XfSarNcL8cmxldoTFIiAHviu_4Y0?usp=sharing
+```
+
+
+
 ## Some Results
 
 ### Results Visualisation
@@ -33,11 +63,6 @@ Note that all the visualisation above using the **same settings** with:
 - nu = 0.1
 - Cavity Flow initial and boundary condition 
 
-## Google Colab Version
-
-```
-https://colab.research.google.com/drive/1ilI0XfSarNcL8cmxldoTFIiAHviu_4Y0?usp=sharing
-```
 
 ## Team Members
 
