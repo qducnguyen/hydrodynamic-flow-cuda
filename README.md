@@ -24,8 +24,13 @@ You could change settings such as dx, dy, dt, GridSize, BlockSize in the file di
 
 ### Google Colab Version
 
+Cavity Flow Version
 ```
 https://colab.research.google.com/drive/1ilI0XfSarNcL8cmxldoTFIiAHviu_4Y0?usp=sharing
+```
+Channel Flow Version with Obstacle (beta)
+```
+https://colab.research.google.com/drive/13ZR1zrFtWnKqpQXWX7Ilmx-sK7rK-ABx?usp=sharing
 ```
 
 
